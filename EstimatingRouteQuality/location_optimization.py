@@ -4,11 +4,16 @@
 # The energy wells created by each route will superimpose on one another, creating wells of 
 # optimal positions.
 
+# Did not make the final blog post, I will work on it more maybe for a future post/app.
+# - speed up for practical use
+# - check reliability: does it always give the same result?
+
 import numpy as np
 import pandas as pd
 from grade_rank_calculation import calculate_grade_rank
 from mpu import haversine_distance
 from scipy.optimize import differential_evolution
+import plotly.graph_objects as go
 
 class location_optimizer(object):
 
@@ -44,12 +49,47 @@ class location_optimizer(object):
 
     def optimize(self):
 
+        opt_data = []
+        def callbackF(xk, convergence=100.0):
+            cTE = self.total_energy(xk)
+            opt_data.append([xk[0], xk[1], cTE])
+
         bounds = [(36.5,49), (-123.9157,-69.2246)]
+        res = differential_evolution(self.total_energy, bounds, polish=True, disp=True, 
+            strategy='randtobest1bin', popsize=20, maxiter=500, callback=callbackF)
+        
+        return res, opt_data
 
-        res = differential_evolution(self.total_energy, bounds, polish=True, disp=True, maxiter=50)
+    def run(self, plot_results=True):
 
-        print(res)
+        res, opt_data = self.optimize()
+        opt_data = [[l[0], l[1], l[2], 0.0] for l in opt_data]
+        final = list(res.x) + [self.total_energy(res.x), 1.0]
+        opt_data.append(final)
+        res_df = pd.DataFrame(opt_data, columns=['lat', 'lon', 'TE', 'type'])
+
+        if plot_results:
+
+            data = go.Scattermapbox(
+                        lat=res_df['lat'],
+                        lon=res_df['lon'],
+                        mode='markers',
+                        marker=dict(color=res_df['type']))
+    
+            layout = dict(margin=dict(l=0, t=0, r=0, b=0, pad=0),
+                          mapbox=dict(center=dict(lat=39,lon=-95),
+                                        style='carto-darkmatter',
+                                        zoom=3.5),
+                          geo=dict(scope='usa',
+                                   projection_type='albers usa',
+                                   resolution=110))
+    
+            fig = go.Figure(data=data, layout=layout)
+            fig.write_html('test.html')
+
+
+if __name__ == '__main__':
  
-df = pd.read_pickle('RouteQualityData.pkl.zip', compression='zip')
-LO = location_optimizer(df, grade_range='5.13a-5.13b', route_type='sport')
-LO.optimize()
+    df = pd.read_pickle('RouteQualityData.pkl.zip', compression='zip')
+    LO = location_optimizer(df, grade_range='5.12a-5.13a', route_type='sport')
+    LO.run()
